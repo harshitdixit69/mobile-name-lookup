@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  mobile-lookup:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - DIGITAP_AUTH_TOKEN=${DIGITAP_AUTH_TOKEN}
+      - DIGITAP_BASE_URL=https://svc.digitap.ai
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3" 

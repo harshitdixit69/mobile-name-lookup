@@ -7,8 +7,9 @@ This service provides a web interface for looking up names associated with mobil
 - Web interface for mobile number lookups
 - Rate limiting (5 requests per minute per IP)
 - Structured logging
-- Docker support
+- Docker support with Docker Compose
 - Environment variable configuration
+- Health checks and automatic restarts
 
 ## Environment Variables
 
@@ -32,7 +33,29 @@ This service provides a web interface for looking up names associated with mobil
    go run main.go
    ```
 
-## Docker Deployment
+## Docker Compose Deployment (Recommended)
+
+1. Create a `.env` file with your Digitap API token:
+   ```
+   DIGITAP_AUTH_TOKEN=your-token-here
+   ```
+
+2. Start the service:
+   ```bash
+   docker-compose up -d
+   ```
+
+3. View logs:
+   ```bash
+   docker-compose logs -f
+   ```
+
+4. Stop the service:
+   ```bash
+   docker-compose down
+   ```
+
+## Manual Docker Deployment
 
 1. Build the Docker image:
    ```bash
@@ -89,6 +112,8 @@ This service provides a web interface for looking up names associated with mobil
 - All requests are logged for monitoring
 - API credentials are managed through environment variables
 - HTTPS is required in production (handled by cloud providers)
+- Container includes health checks and automatic restarts
+- Log rotation is configured to prevent disk space issues
 
 ## Monitoring
 
@@ -97,6 +122,11 @@ The service outputs structured JSON logs that can be collected by logging platfo
 - AWS CloudWatch
 - ELK Stack
 - Datadog
+
+Docker Compose configuration includes:
+- Health checks
+- Automatic restarts
+- Log rotation (max 3 files of 10MB each)
 
 ## Support
 
