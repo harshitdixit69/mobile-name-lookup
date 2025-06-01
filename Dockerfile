@@ -1,17 +1,21 @@
-FROM golang:1.21-alpine AS builder
+FROM golang:1.21-alpine
 
 WORKDIR /app
-COPY go.mod go.sum* ./
+
+# Copy go mod and sum files
+COPY go.mod go.sum ./
+
+# Download all dependencies
 RUN go mod download
 
+# Copy the source code
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o main .
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
+# Build the application
+RUN go build -o main .
 
-WORKDIR /app
-COPY --from=builder /app/main .
-
+# Expose port 8080
 EXPOSE 8080
+
+# Command to run the executable
 CMD ["./main"] 
