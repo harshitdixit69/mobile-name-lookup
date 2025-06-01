@@ -246,9 +246,11 @@ func rateLimitMiddleware(next http.HandlerFunc, limiter *IPRateLimiter) http.Han
 }
 
 func main() {
-	// Load .env file
-	if err := godotenv.Load(); err != nil {
-		logger.WithError(err).Info("No .env file found, will use environment variables")
+	// Only try to load .env file if we're not in a cloud environment
+	if os.Getenv("RAILWAY_ENVIRONMENT") == "" {
+		if err := godotenv.Load(); err != nil {
+			logger.WithError(err).Info("No .env file found in development environment")
+		}
 	}
 
 	// Configure logging
