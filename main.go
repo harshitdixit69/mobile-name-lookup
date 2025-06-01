@@ -248,18 +248,18 @@ func rateLimitMiddleware(next http.HandlerFunc, limiter *IPRateLimiter) http.Han
 func main() {
 	// Load .env file
 	if err := godotenv.Load(); err != nil {
-		logger.WithError(err).Warn("Error loading .env file")
+		logger.WithError(err).Info("No .env file found, will use environment variables")
 	}
 
 	// Configure logging
 	logger.SetFormatter(&logrus.JSONFormatter{})
 	logger.SetOutput(os.Stdout)
 
-	// Get environment variables
+	// Get environment variables with defaults
 	baseURL := getEnvOrDefault("DIGITAP_BASE_URL", "https://svc.digitap.ai")
-	authToken := os.Getenv("DIGITAP_AUTH_TOKEN")
+	authToken := getEnvOrDefault("DIGITAP_AUTH_TOKEN", "")
 	if authToken == "" {
-		logger.Fatal("DIGITAP_AUTH_TOKEN environment variable is required. Please create a .env file with DIGITAP_AUTH_TOKEN=your-token")
+		logger.Fatal("DIGITAP_AUTH_TOKEN environment variable is required")
 	}
 
 	// Create rate limiter (5 requests per minute per IP)
