@@ -30,9 +30,9 @@ func NewDB() (*DB, error) {
 	if dbURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL environment variable is required")
 	}
-	connectionString := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", "upnbsxg4yg4es1ic", "jWLiq8tKZQPtyCoSTGyO", "bakggowhgkephmh0ugod-mysql.services.clever-cloud.com", 3306, "bakggowhgkephmh0ugod")
+	// connectionString := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", "upnbsxg4yg4es1ic", "jWLiq8tKZQPtyCoSTGyO", "bakggowhgkephmh0ugod-mysql.services.clever-cloud.com", 3306, "bakggowhgkephmh0ugod")
 	// Open database connection
-	db, err := sql.Open("mysql", connectionString)
+	db, err := sql.Open("mysql", dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("error opening database: %v", err)
 	}
