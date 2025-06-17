@@ -177,6 +177,40 @@ const htmlTemplate = `
             color: #6c757d;
             margin-top: 5px;
         }
+        .history {
+            margin-top: 30px;
+            border-top: 1px solid #dee2e6;
+            padding-top: 20px;
+        }
+        .history h2 {
+            color: #495057;
+            font-size: 1.5em;
+            margin-bottom: 15px;
+        }
+        .history-item {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+        .history-item .header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+        .history-item .content {
+            color: #212529;
+        }
+        .history-item .status {
+            font-weight: bold;
+            color: #28a745;
+        }
+        .history-item .status.error {
+            color: #dc3545;
+        }
     </style>
 </head>
 <body>
@@ -212,6 +246,28 @@ const htmlTemplate = `
             {{.Error}}
         </div>
         {{end}}
+        {{if .History}}
+        <div class="history">
+            <h2>Lookup History</h2>
+            {{range .History}}
+            <div class="history-item">
+                <div class="header">
+                    <span>Ref: {{.ClientRefNum}}</span>
+                    <span>{{.CreatedAt.Format "Jan 02, 2006 15:04:05"}}</span>
+                </div>
+                <div class="content">
+                    <div><strong>Status:</strong> <span class="status {{if eq .ResponseStatus "success"}}success{{else}}error{{end}}">{{.ResponseStatus}}</span></div>
+                    {{if .ResponseMessage}}
+                    <div><strong>Message:</strong> {{.ResponseMessage}}</div>
+                    {{end}}
+                    {{if .ResponseResult}}
+                    <div><strong>Result:</strong> {{.ResponseResult}}</div>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
+        </div>
+        {{end}}
     </div>
 </body>
 </html>
@@ -219,9 +275,10 @@ const htmlTemplate = `
 
 // PageData represents the data passed to the template
 type PageData struct {
-	Result *MobileNameLookupResponse
-	Error  string
-	Record *db.MobileRecord
+	Result  *MobileNameLookupResponse
+	Error   string
+	Record  *db.MobileRecord
+	History []*db.APIResponseLog
 }
 
 // Logger instance
@@ -370,87 +427,90 @@ func main() {
 
 	// Handle form submission - POST request
 	http.HandleFunc("/lookup", rateLimitMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			// Redirect GET requests to home page
-			http.Redirect(w, r, "/", http.StatusSeeOther)
-			return
-		case http.MethodPost:
-			// Handle POST request
-			if err := r.ParseForm(); err != nil {
-				logger.WithError(err).Error("Failed to parse form")
-				http.Error(w, "Invalid form data", http.StatusBadRequest)
-				return
-			}
-
-			mobile := r.FormValue("mobile")
-			if mobile == "" {
-				tmpl.Execute(w, PageData{Error: "Mobile number is required"})
-				return
-			}
-
-			// Validate mobile number format
-			if len(mobile) != 10 {
-				tmpl.Execute(w, PageData{Error: "Please enter a valid 10-digit mobile number"})
-				return
-			}
-
-			// Log request
-			logger.WithFields(logrus.Fields{
-				"mobile": mobile,
-				"ip":     r.RemoteAddr,
-				"method": r.Method,
-			}).Info("Lookup request received")
-
-			// First, check if we have the record in our database
-			record, err := database.GetMobileRecord(mobile)
-			if err != nil {
-				logger.WithError(err).Error("Failed to query database")
-				tmpl.Execute(w, PageData{Error: "Database error occurred"})
-				return
-			}
-
-			if record != nil {
-				// We found the record in our database
-				logger.WithFields(logrus.Fields{
-					"mobile": mobile,
-					"name":   record.Name,
-				}).Info("Found record in database")
-				tmpl.Execute(w, PageData{Record: record})
-				return
-			}
-
-			// If not in database, query the API
-			clientRefNum := fmt.Sprintf("REF_%d", time.Now().Unix())
-			name := ""
-
-			response, err := client.LookupMobileName(clientRefNum, mobile, name)
-			if err != nil {
-				logger.WithError(err).WithFields(logrus.Fields{
-					"mobile":     mobile,
-					"client_ref": clientRefNum,
-				}).Error("Lookup failed")
-				tmpl.Execute(w, PageData{Error: "Service temporarily unavailable. Please try again."})
-				return
-			}
-
-			// If we got a name from the API, save it to our database
-			if response.Result.MobileLinkedName != "" {
-				if err := database.SaveMobileRecord(mobile, response.Result.MobileLinkedName); err != nil {
-					logger.WithError(err).Error("Failed to save record to database")
-				}
-			}
-
-			logger.WithFields(logrus.Fields{
-				"mobile":     mobile,
-				"status":     response.Status,
-				"client_ref": clientRefNum,
-			}).Info("Lookup successful")
-
-			tmpl.Execute(w, PageData{Result: response})
-			return
-		default:
+		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		mobile := r.FormValue("mobile")
+		if mobile == "" {
+			http.Error(w, "Mobile number is required", http.StatusBadRequest)
+			return
+		}
+
+		// Generate a unique client reference number
+		clientRefNum := fmt.Sprintf("REF-%d", time.Now().UnixNano())
+
+		// Get existing record from database
+		record, err := database.GetMobileRecord(mobile)
+		if err != nil {
+			logger.WithError(err).Error("Failed to get mobile record")
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		var name string
+		if record != nil {
+			name = record.Name
+		}
+
+		// Perform lookup
+		response, err := client.LookupMobileName(clientRefNum, mobile, name)
+		if err != nil {
+			logger.WithError(err).Error("Lookup failed")
+			http.Error(w, "Lookup failed", http.StatusInternalServerError)
+			return
+		}
+
+		// Save API response to database
+		apiLog := &db.APIResponseLog{
+			ClientRefNum:    clientRefNum,
+			Mobile:          mobile,
+			Name:            name,
+			ResponseStatus:  response.Status,
+			ResponseMessage: response.Message,
+			ResponseResult:  response.Result.MobileLinkedName,
+		}
+		if err := database.SaveAPIResponseLog(apiLog); err != nil {
+			logger.WithError(err).Error("Failed to save API response log")
+		}
+
+		// If we got a name from the API, save it to the database
+		if response.Result.MobileLinkedName != "" {
+			if err := database.SaveMobileRecord(mobile, response.Result.MobileLinkedName); err != nil {
+				logger.WithError(err).Error("Failed to save mobile record")
+			}
+		}
+
+		// Get API response history
+		history, err := database.GetAPIResponseLogs(mobile)
+		if err != nil {
+			logger.WithError(err).Error("Failed to get API response history")
+		}
+
+		// Get updated record
+		record, err = database.GetMobileRecord(mobile)
+		if err != nil {
+			logger.WithError(err).Error("Failed to get updated mobile record")
+		}
+
+		// Render template
+		tmpl, err := template.New("lookup").Parse(htmlTemplate)
+		if err != nil {
+			logger.WithError(err).Error("Failed to parse template")
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		data := PageData{
+			Result:  response,
+			Record:  record,
+			History: history,
+		}
+
+		if err := tmpl.Execute(w, data); err != nil {
+			logger.WithError(err).Error("Failed to execute template")
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 	}, limiter))
