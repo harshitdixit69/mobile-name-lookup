@@ -311,10 +311,17 @@ func main() {
 	}
 	defer database.Close()
 
+	// Test database connection
+	if err := database.TestConnection(); err != nil {
+		logger.WithError(err).Fatal("Failed to test database connection")
+	}
+	logger.Info("Successfully connected to database")
+
 	// Initialize database schema
 	if err := database.InitDB(); err != nil {
 		logger.WithError(err).Fatal("Failed to initialize database")
 	}
+	logger.Info("Successfully initialized database schema")
 
 	// Get environment variables with defaults
 	baseURL := getEnvOrDefault("DIGITAP_BASE_URL", "https://svc.digitap.ai")

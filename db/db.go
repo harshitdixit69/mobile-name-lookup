@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 // DB represents the database connection
@@ -32,7 +32,7 @@ func NewDB() (*DB, error) {
 	}
 
 	// Open database connection
-	db, err := sql.Open("postgres", dbURL)
+	db, err := sql.Open("mysql", dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("error opening database: %v", err)
 	}
@@ -55,11 +55,11 @@ func (db *DB) InitDB() error {
 	// Create mobile_records table
 	query := `
 	CREATE TABLE IF NOT EXISTS mobile_records (
-		id SERIAL PRIMARY KEY,
+		id BIGINT AUTO_INCREMENT PRIMARY KEY,
 		mobile VARCHAR(10) UNIQUE NOT NULL,
 		name VARCHAR(255) NOT NULL,
-		created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-		updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 	);`
 
 	_, err := db.Exec(query)
@@ -74,15 +74,12 @@ func (db *DB) InitDB() error {
 func (db *DB) SaveMobileRecord(mobile, name string) error {
 	query := `
 	INSERT INTO mobile_records (mobile, name)
-	VALUES ($1, $2)
-	ON CONFLICT (mobile) 
-	DO UPDATE SET 
-		name = $2,
-		updated_at = CURRENT_TIMESTAMP
-	RETURNING id;`
+	VALUES (?, ?)
+	ON DUPLICATE KEY UPDATE 
+		name = VALUES(name),
+		updated_at = CURRENT_TIMESTAMP;`
 
-	var id int64
-	err := db.QueryRow(query, mobile, name).Scan(&id)
+	_, err := db.Exec(query, mobile, name)
 	if err != nil {
 		return fmt.Errorf("error saving mobile record: %v", err)
 	}
@@ -95,7 +92,7 @@ func (db *DB) GetMobileRecord(mobile string) (*MobileRecord, error) {
 	query := `
 	SELECT id, mobile, name, created_at, updated_at
 	FROM mobile_records
-	WHERE mobile = $1;`
+	WHERE mobile = ?;`
 
 	record := &MobileRecord{}
 	err := db.QueryRow(query, mobile).Scan(
@@ -113,6 +110,27 @@ func (db *DB) GetMobileRecord(mobile string) (*MobileRecord, error) {
 	}
 
 	return record, nil
+}
+
+// TestConnection tests the database connection
+func (db *DB) TestConnection() error {
+	// Try to ping the database
+	if err := db.Ping(); err != nil {
+		return fmt.Errorf("failed to ping database: %v", err)
+	}
+
+	// Try a simple query
+	var result int
+	err := db.QueryRow("SELECT 1").Scan(&result)
+	if err != nil {
+		return fmt.Errorf("failed to execute test query: %v", err)
+	}
+
+	if result != 1 {
+		return fmt.Errorf("unexpected test query result: %d", result)
+	}
+
+	return nil
 }
 
 // Close closes the database connection
