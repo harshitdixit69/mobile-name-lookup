@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -42,7 +43,7 @@ func NewDigitapClient(baseURL, authToken string) *DigitapClient {
 	}
 }
 
-// LookupMobileName performs the mobile name lookup
+// LookupMobileName performs the mobile name lookup with retry logic
 func (c *DigitapClient) LookupMobileName(clientRefNum, mobile, name string) (*MobileNameLookupResponse, error) {
 	url := c.BaseURL + "/validation/misc/v1/mobile-name-lookup"
 
@@ -52,31 +53,49 @@ func (c *DigitapClient) LookupMobileName(clientRefNum, mobile, name string) (*Mo
 		"name": "%s"
 	}`, clientRefNum, mobile, name)
 
-	req, err := http.NewRequest("POST", url, strings.NewReader(payload))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %v", err)
+	maxRetries := 3
+	var lastErr error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		req, err := http.NewRequest("POST", url, strings.NewReader(payload))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %v", err)
+		}
+
+		req.Header.Add("Authorization", "Basic "+c.AuthToken)
+		req.Header.Add("Content-Type", "application/json")
+
+		// Set timeout for the request
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		req = req.WithContext(ctx)
+
+		resp, err := c.HTTPClient.Do(req)
+		if err != nil {
+			lastErr = err
+			logger.WithError(err).WithField("attempt", attempt+1).Warn("Request failed, retrying...")
+			time.Sleep(time.Duration(attempt+1) * time.Second) // Exponential backoff
+			continue
+		}
+		defer resp.Body.Close()
+
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			lastErr = err
+			logger.WithError(err).WithField("attempt", attempt+1).Warn("Failed to read response, retrying...")
+			time.Sleep(time.Duration(attempt+1) * time.Second)
+			continue
+		}
+
+		var response MobileNameLookupResponse
+		if err := json.Unmarshal(body, &response); err != nil {
+			return nil, fmt.Errorf("failed to parse response: %v", err)
+		}
+
+		return &response, nil
 	}
 
-	req.Header.Add("Authorization", "Basic "+c.AuthToken)
-	req.Header.Add("Content-Type", "application/json")
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %v", err)
-	}
-
-	var response MobileNameLookupResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %v", err)
-	}
-
-	return &response, nil
+	return nil, fmt.Errorf("all retry attempts failed: %v", lastErr)
 }
 
 // HTML template for the mobile interface
@@ -264,11 +283,26 @@ func main() {
 		logger.Fatal("DIGITAP_AUTH_TOKEN environment variable is required")
 	}
 
+	// Create HTTP client with custom timeout
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 100,
+			IdleConnTimeout:     90 * time.Second,
+			TLSHandshakeTimeout: 10 * time.Second,
+		},
+	}
+
 	// Create rate limiter (5 requests per minute per IP)
 	limiter := NewIPRateLimiter(rate.Every(12*time.Second), 5)
 
-	// Create client
-	client := NewDigitapClient(baseURL, authToken)
+	// Create client with custom HTTP client
+	client := &DigitapClient{
+		BaseURL:    baseURL,
+		AuthToken:  authToken,
+		HTTPClient: httpClient,
+	}
 
 	// Parse template
 	tmpl := template.Must(template.New("mobile").Parse(htmlTemplate))
