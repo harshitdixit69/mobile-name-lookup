@@ -307,63 +307,7 @@ func main() {
 	// Parse template
 	tmpl := template.Must(template.New("mobile").Parse(htmlTemplate))
 
-	// Handle form submission with rate limiting
-	http.HandleFunc("/lookup", rateLimitMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// Parse form data
-		if err := r.ParseForm(); err != nil {
-			logger.WithError(err).Error("Failed to parse form")
-			http.Error(w, "Invalid form data", http.StatusBadRequest)
-			return
-		}
-
-		mobile := r.FormValue("mobile")
-		if mobile == "" {
-			tmpl.Execute(w, PageData{Error: "Mobile number is required"})
-			return
-		}
-
-		// Validate mobile number format
-		if len(mobile) != 10 {
-			tmpl.Execute(w, PageData{Error: "Please enter a valid 10-digit mobile number"})
-			return
-		}
-
-		// Log request
-		logger.WithFields(logrus.Fields{
-			"mobile": mobile,
-			"ip":     r.RemoteAddr,
-			"method": r.Method,
-		}).Info("Lookup request received")
-
-		// Hardcoded values
-		clientRefNum := fmt.Sprintf("REF_%d", time.Now().Unix())
-		name := ""
-
-		response, err := client.LookupMobileName(clientRefNum, mobile, name)
-		if err != nil {
-			logger.WithError(err).WithFields(logrus.Fields{
-				"mobile":     mobile,
-				"client_ref": clientRefNum,
-			}).Error("Lookup failed")
-			tmpl.Execute(w, PageData{Error: "Service temporarily unavailable. Please try again."})
-			return
-		}
-
-		logger.WithFields(logrus.Fields{
-			"mobile":     mobile,
-			"status":     response.Status,
-			"client_ref": clientRefNum,
-		}).Info("Lookup successful")
-
-		tmpl.Execute(w, PageData{Result: response})
-	}, limiter))
-
-	// Handle root path
+	// Handle root path - GET request to show the form
 	http.HandleFunc("/", rateLimitMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -373,7 +317,70 @@ func main() {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		// Show empty form
 		tmpl.Execute(w, PageData{})
+	}, limiter))
+
+	// Handle form submission - POST request
+	http.HandleFunc("/lookup", rateLimitMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			// Redirect GET requests to home page
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		case http.MethodPost:
+			// Handle POST request
+			if err := r.ParseForm(); err != nil {
+				logger.WithError(err).Error("Failed to parse form")
+				http.Error(w, "Invalid form data", http.StatusBadRequest)
+				return
+			}
+
+			mobile := r.FormValue("mobile")
+			if mobile == "" {
+				tmpl.Execute(w, PageData{Error: "Mobile number is required"})
+				return
+			}
+
+			// Validate mobile number format
+			if len(mobile) != 10 {
+				tmpl.Execute(w, PageData{Error: "Please enter a valid 10-digit mobile number"})
+				return
+			}
+
+			// Log request
+			logger.WithFields(logrus.Fields{
+				"mobile": mobile,
+				"ip":     r.RemoteAddr,
+				"method": r.Method,
+			}).Info("Lookup request received")
+
+			// Hardcoded values
+			clientRefNum := fmt.Sprintf("REF_%d", time.Now().Unix())
+			name := ""
+
+			response, err := client.LookupMobileName(clientRefNum, mobile, name)
+			if err != nil {
+				logger.WithError(err).WithFields(logrus.Fields{
+					"mobile":     mobile,
+					"client_ref": clientRefNum,
+				}).Error("Lookup failed")
+				tmpl.Execute(w, PageData{Error: "Service temporarily unavailable. Please try again."})
+				return
+			}
+
+			logger.WithFields(logrus.Fields{
+				"mobile":     mobile,
+				"status":     response.Status,
+				"client_ref": clientRefNum,
+			}).Info("Lookup successful")
+
+			tmpl.Execute(w, PageData{Result: response})
+			return
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 	}, limiter))
 
 	// Get port from environment variable or use default
