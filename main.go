@@ -168,7 +168,7 @@ const htmlTemplate = `
         <form method="POST" action="/lookup">
             <div class="form-group">
                 <label for="mobile">Mobile Number:</label>
-                <input type="tel" id="mobile" name="mobile" required>
+                <input type="tel" id="mobile" name="mobile" required pattern="[0-9]{10}" title="Please enter a 10-digit mobile number">
             </div>
             <button type="submit">Lookup</button>
         </form>
@@ -314,9 +314,22 @@ func main() {
 			return
 		}
 
+		// Parse form data
+		if err := r.ParseForm(); err != nil {
+			logger.WithError(err).Error("Failed to parse form")
+			http.Error(w, "Invalid form data", http.StatusBadRequest)
+			return
+		}
+
 		mobile := r.FormValue("mobile")
 		if mobile == "" {
 			tmpl.Execute(w, PageData{Error: "Mobile number is required"})
+			return
+		}
+
+		// Validate mobile number format
+		if len(mobile) != 10 {
+			tmpl.Execute(w, PageData{Error: "Please enter a valid 10-digit mobile number"})
 			return
 		}
 
@@ -337,7 +350,7 @@ func main() {
 				"mobile":     mobile,
 				"client_ref": clientRefNum,
 			}).Error("Lookup failed")
-			tmpl.Execute(w, PageData{Error: "Service temporarily unavailable"})
+			tmpl.Execute(w, PageData{Error: "Service temporarily unavailable. Please try again."})
 			return
 		}
 
@@ -354,6 +367,10 @@ func main() {
 	http.HandleFunc("/", rateLimitMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		tmpl.Execute(w, PageData{})
