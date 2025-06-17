@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"mobile-name-lookup/db"
+
 	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
@@ -160,6 +162,21 @@ const htmlTemplate = `
             margin-top: 10px;
             text-align: center;
         }
+        .db-record {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            background-color: #e9ecef;
+            font-size: 16px;
+        }
+        .db-record strong {
+            color: #495057;
+        }
+        .timestamp {
+            font-size: 14px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -172,6 +189,15 @@ const htmlTemplate = `
             </div>
             <button type="submit">Lookup</button>
         </form>
+        {{if .Record}}
+        <div class="db-record">
+            <strong>Name:</strong> {{.Record.Name}}<br>
+            <strong>Mobile:</strong> {{.Record.Mobile}}<br>
+            <div class="timestamp">
+                Last updated: {{.Record.UpdatedAt.Format "Jan 02, 2006 15:04:05"}}
+            </div>
+        </div>
+        {{end}}
         {{if .Result}}
         <div class="result">
             {{if .Result.Result.MobileLinkedName}}
@@ -191,9 +217,11 @@ const htmlTemplate = `
 </html>
 `
 
+// PageData represents the data passed to the template
 type PageData struct {
 	Result *MobileNameLookupResponse
 	Error  string
+	Record *db.MobileRecord
 }
 
 // Logger instance
@@ -276,6 +304,18 @@ func main() {
 	logger.SetFormatter(&logrus.JSONFormatter{})
 	logger.SetOutput(os.Stdout)
 
+	// Initialize database
+	database, err := db.NewDB()
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to connect to database")
+	}
+	defer database.Close()
+
+	// Initialize database schema
+	if err := database.InitDB(); err != nil {
+		logger.WithError(err).Fatal("Failed to initialize database")
+	}
+
 	// Get environment variables with defaults
 	baseURL := getEnvOrDefault("DIGITAP_BASE_URL", "https://svc.digitap.ai")
 	authToken := getEnvOrDefault("DIGITAP_AUTH_TOKEN", "")
@@ -355,7 +395,25 @@ func main() {
 				"method": r.Method,
 			}).Info("Lookup request received")
 
-			// Hardcoded values
+			// First, check if we have the record in our database
+			record, err := database.GetMobileRecord(mobile)
+			if err != nil {
+				logger.WithError(err).Error("Failed to query database")
+				tmpl.Execute(w, PageData{Error: "Database error occurred"})
+				return
+			}
+
+			if record != nil {
+				// We found the record in our database
+				logger.WithFields(logrus.Fields{
+					"mobile": mobile,
+					"name":   record.Name,
+				}).Info("Found record in database")
+				tmpl.Execute(w, PageData{Record: record})
+				return
+			}
+
+			// If not in database, query the API
 			clientRefNum := fmt.Sprintf("REF_%d", time.Now().Unix())
 			name := ""
 
@@ -367,6 +425,13 @@ func main() {
 				}).Error("Lookup failed")
 				tmpl.Execute(w, PageData{Error: "Service temporarily unavailable. Please try again."})
 				return
+			}
+
+			// If we got a name from the API, save it to our database
+			if response.Result.MobileLinkedName != "" {
+				if err := database.SaveMobileRecord(mobile, response.Result.MobileLinkedName); err != nil {
+					logger.WithError(err).Error("Failed to save record to database")
+				}
 			}
 
 			logger.WithFields(logrus.Fields{
