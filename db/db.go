@@ -23,18 +23,6 @@ type MobileRecord struct {
 	UpdatedAt time.Time
 }
 
-// APIResponseLog represents a log of API responses
-type APIResponseLog struct {
-	ID              int64
-	ClientRefNum    string
-	Mobile          string
-	Name            string
-	ResponseStatus  string
-	ResponseMessage string
-	ResponseResult  string
-	CreatedAt       time.Time
-}
-
 // NewDB creates a new database connection
 func NewDB() (*DB, error) {
 	// Get database connection string from environment
@@ -77,26 +65,6 @@ func (db *DB) InitDB() error {
 	_, err := db.Exec(query)
 	if err != nil {
 		return fmt.Errorf("error creating table: %v", err)
-	}
-
-	// Create api_response_logs table
-	query = `
-	CREATE TABLE IF NOT EXISTS api_response_logs (
-		id BIGINT AUTO_INCREMENT PRIMARY KEY,
-		client_ref_num VARCHAR(255) NOT NULL,
-		mobile VARCHAR(10) NOT NULL,
-		name VARCHAR(255) NOT NULL,
-		response_status VARCHAR(50) NOT NULL,
-		response_message TEXT,
-		response_result TEXT,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		INDEX idx_mobile (mobile),
-		INDEX idx_created_at (created_at)
-	);`
-
-	_, err = db.Exec(query)
-	if err != nil {
-		return fmt.Errorf("error creating api_response_logs table: %v", err)
 	}
 
 	return nil
@@ -142,70 +110,6 @@ func (db *DB) GetMobileRecord(mobile string) (*MobileRecord, error) {
 	}
 
 	return record, nil
-}
-
-// SaveAPIResponseLog saves an API response log to the database
-func (db *DB) SaveAPIResponseLog(log *APIResponseLog) error {
-	query := `
-	INSERT INTO api_response_logs (
-		client_ref_num, mobile, name, 
-		response_status, response_message, response_result
-	) VALUES (?, ?, ?, ?, ?, ?);`
-
-	_, err := db.Exec(query,
-		log.ClientRefNum,
-		log.Mobile,
-		log.Name,
-		log.ResponseStatus,
-		log.ResponseMessage,
-		log.ResponseResult,
-	)
-	if err != nil {
-		return fmt.Errorf("error saving API response log: %v", err)
-	}
-
-	return nil
-}
-
-// GetAPIResponseLogs retrieves API response logs for a mobile number
-func (db *DB) GetAPIResponseLogs(mobile string) ([]*APIResponseLog, error) {
-	query := `
-	SELECT id, client_ref_num, mobile, name, 
-		response_status, response_message, response_result, created_at
-	FROM api_response_logs
-	WHERE mobile = ?
-	ORDER BY created_at DESC;`
-
-	rows, err := db.Query(query, mobile)
-	if err != nil {
-		return nil, fmt.Errorf("error getting API response logs: %v", err)
-	}
-	defer rows.Close()
-
-	var logs []*APIResponseLog
-	for rows.Next() {
-		log := &APIResponseLog{}
-		err := rows.Scan(
-			&log.ID,
-			&log.ClientRefNum,
-			&log.Mobile,
-			&log.Name,
-			&log.ResponseStatus,
-			&log.ResponseMessage,
-			&log.ResponseResult,
-			&log.CreatedAt,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("error scanning API response log: %v", err)
-		}
-		logs = append(logs, log)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating API response logs: %v", err)
-	}
-
-	return logs, nil
 }
 
 // TestConnection tests the database connection
