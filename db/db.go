@@ -90,7 +90,7 @@ func (db *DB) SaveMobileRecord(mobile, name string) error {
 // GetMobileRecord retrieves a mobile record from the database
 func (db *DB) GetMobileRecord(mobile string) (*MobileRecord, error) {
 	query := `
-	SELECT id, mobile, name, created_at, updated_at
+	SELECT id, mobile, name
 	FROM mobile_records
 	WHERE mobile = ?;`
 
@@ -99,8 +99,6 @@ func (db *DB) GetMobileRecord(mobile string) (*MobileRecord, error) {
 		&record.ID,
 		&record.Mobile,
 		&record.Name,
-		&record.CreatedAt,
-		&record.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
