@@ -422,14 +422,36 @@ func main() {
 			return
 		case http.MethodPost:
 			// Handle POST request
-			if err := r.ParseForm(); err != nil {
-				logger.WithError(err).Error("Failed to parse form")
-				http.Error(w, "Invalid form data", http.StatusBadRequest)
-				return
+			var mobile string
+
+			// Check if it's a JSON request
+			if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+				var requestBody struct {
+					Mobile string `json:"mobile"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+					logger.WithError(err).Error("Failed to decode JSON body")
+					if isAPIRequest(r) {
+						respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{
+							"error": "Invalid JSON body",
+						})
+					} else {
+						http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+					}
+					return
+				}
+				mobile = requestBody.Mobile
+			} else {
+				// Handle form data
+				if err := r.ParseForm(); err != nil {
+					logger.WithError(err).Error("Failed to parse form")
+					http.Error(w, "Invalid form data", http.StatusBadRequest)
+					return
+				}
+				mobile = r.FormValue("mobile")
 			}
 
-			rawMobile := r.FormValue("mobile")
-			if rawMobile == "" {
+			if mobile == "" {
 				if isAPIRequest(r) {
 					respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{
 						"error": "Mobile number is required",
@@ -441,7 +463,7 @@ func main() {
 			}
 
 			// Clean and validate mobile number
-			mobile, err := cleanPhoneNumber(rawMobile)
+			mobile, err := cleanPhoneNumber(mobile)
 			if err != nil {
 				if isAPIRequest(r) {
 					respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{
@@ -455,7 +477,7 @@ func main() {
 
 			// Log request
 			logger.WithFields(logrus.Fields{
-				"raw_mobile":   rawMobile,
+				"raw_mobile":   mobile,
 				"clean_mobile": mobile,
 				"ip":           r.RemoteAddr,
 				"method":       r.Method,

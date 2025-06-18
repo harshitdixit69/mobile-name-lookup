@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
-import axios from 'axios';
 
-const API_URL = 'https://spiteful-seashore-production.up.railway.app/lookup_post'; // <-- Replace with your deployed Railway API endpoint
+const API_URL = 'http://localhost:8080/lookup_post'; // Updated endpoint
 
 export default function App() {
   const [mobile, setMobile] = useState('');
@@ -15,22 +14,34 @@ export default function App() {
     setResult(null);
     setError(null);
     setLoading(true);
+    
     try {
-      const form = new FormData();  
-      form.append('mobile', mobile);
-      const response = await axios.post(API_URL, form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          mobile: mobile
+        }),
       });
-      console.log(response.data);
-      if (response.data && response.data.result && response.data.result.mobile_linked_name) {
-        setResult(response.data.result.mobile_linked_name);
-      } else if (response.data && response.data.message) {
-        setError(response.data.message);
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        if (data.result && data.result.mobile_linked_name) {
+          setResult(data.result.mobile_linked_name);
+        } else if (data.message) {
+          setError(data.message);
+        } else {
+          setError('No name found for this number.');
+        }
       } else {
-        setError('No name found for this number.');
+        setError(data.error || 'Lookup failed. Please try again.');
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Lookup failed. Please try again.');
+      setError('Network error. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }
