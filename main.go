@@ -187,10 +187,10 @@ const htmlTemplate = `
             <div class="form-group">
                 <label for="mobile">Mobile Number:</label>
                 <input type="tel" id="mobile" name="mobile" required 
-                       placeholder="e.g., 8318090007 or +91 83180 90007" 
+                       placeholder="e.g., 8318090009 or +91 83180 90009" 
                        title="Enter a 10-digit mobile number. Country codes and spaces are automatically handled.">
                 <small style="color: #6c757d; font-size: 0.875em;">
-                    Supports formats: 8318090007, +91 83180 90007, +91-83180-90007
+                    Supports formats: 8318090009, +91 83180 90009, +91-83180-90009
                 </small>
             </div>
             <button type="submit">Lookup</button>
