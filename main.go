@@ -184,7 +184,7 @@ const htmlTemplate = `
 <body>
     <div class="container">
         <h1>Mobile Name Lookup</h1>
-        <form method="POST" action="/lookup">
+        <form method="POST" action="/lookup_post">
             <div class="form-group">
                 <label for="mobile">Mobile Number:</label>
                 <input type="tel" id="mobile" name="mobile" required 
@@ -414,7 +414,7 @@ func main() {
 	}, limiter))
 
 	// Handle form submission - POST request
-	mux.HandleFunc("/lookup", rateLimitMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/lookup_post", rateLimitMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			// Redirect GET requests to home page

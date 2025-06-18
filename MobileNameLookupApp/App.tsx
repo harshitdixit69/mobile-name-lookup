@@ -3,7 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import axios from 'axios';
 
-const API_URL = 'https://spiteful-seashore-production.up.railway.app/lookup'; // <-- Replace with your deployed Railway API endpoint
+const API_URL = 'https://spiteful-seashore-production.up.railway.app/lookup_post'; // <-- Replace with your deployed Railway API endpoint
 
 export default function App() {
   const [mobile, setMobile] = useState('');
