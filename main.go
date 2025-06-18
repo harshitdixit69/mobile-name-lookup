@@ -193,9 +193,6 @@ const htmlTemplate = `
         <div class="db-record">
             <strong>Name:</strong> {{.Record.Name}}<br>
             <strong>Mobile:</strong> {{.Record.Mobile}}<br>
-            <div class="timestamp">
-                Last updated: {{.Record.UpdatedAt.Format "Jan 02, 2006 15:04:05"}}
-            </div>
         </div>
         {{end}}
         {{if .Result}}
