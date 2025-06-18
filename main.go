@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -185,7 +186,12 @@ const htmlTemplate = `
         <form method="POST" action="/lookup">
             <div class="form-group">
                 <label for="mobile">Mobile Number:</label>
-                <input type="tel" id="mobile" name="mobile" required pattern="[0-9]{10}" title="Please enter a 10-digit mobile number">
+                <input type="tel" id="mobile" name="mobile" required 
+                       placeholder="e.g., 8318090007 or +91 83180 90007" 
+                       title="Enter a 10-digit mobile number. Country codes and spaces are automatically handled.">
+                <small style="color: #6c757d; font-size: 0.875em;">
+                    Supports formats: 8318090007, +91 83180 90007, +91-83180-90007
+                </small>
             </div>
             <button type="submit">Lookup</button>
         </form>
@@ -289,6 +295,45 @@ func rateLimitMiddleware(next http.HandlerFunc, limiter *IPRateLimiter) http.Han
 	}
 }
 
+// cleanPhoneNumber removes all non-digit characters and handles country codes
+func cleanPhoneNumber(phone string) (string, error) {
+	// Remove all non-digit characters
+	re := regexp.MustCompile(`[^\d]`)
+	digits := re.ReplaceAllString(phone, "")
+
+	// Handle different formats
+	if len(digits) == 0 {
+		return "", fmt.Errorf("no digits found in phone number")
+	}
+
+	// If it starts with country code (e.g., 91 for India), remove it
+	if len(digits) > 10 {
+		// Common country codes: 91 (India), 1 (US/Canada), 44 (UK), etc.
+		if strings.HasPrefix(digits, "91") && len(digits) == 12 {
+			digits = digits[2:] // Remove 91
+		} else if strings.HasPrefix(digits, "1") && len(digits) == 11 {
+			digits = digits[1:] // Remove 1
+		} else if strings.HasPrefix(digits, "44") && len(digits) == 12 {
+			digits = digits[2:] // Remove 44
+		} else if len(digits) > 10 {
+			// For other country codes, try to extract the last 10 digits
+			digits = digits[len(digits)-10:]
+		}
+	}
+
+	// Validate the final number
+	if len(digits) != 10 {
+		return "", fmt.Errorf("invalid phone number length: %d digits (expected 10)", len(digits))
+	}
+
+	// Check if it's a valid Indian mobile number (starts with 6, 7, 8, 9)
+	if !regexp.MustCompile(`^[6-9]\d{9}$`).MatchString(digits) {
+		return "", fmt.Errorf("invalid mobile number format")
+	}
+
+	return digits, nil
+}
+
 func main() {
 	// Only try to load .env file if we're not in a cloud environment
 	if os.Getenv("RAILWAY_ENVIRONMENT") == "" {
@@ -380,23 +425,25 @@ func main() {
 				return
 			}
 
-			mobile := r.FormValue("mobile")
-			if mobile == "" {
+			rawMobile := r.FormValue("mobile")
+			if rawMobile == "" {
 				tmpl.Execute(w, PageData{Error: "Mobile number is required"})
 				return
 			}
 
-			// Validate mobile number format
-			if len(mobile) != 10 {
-				tmpl.Execute(w, PageData{Error: "Please enter a valid 10-digit mobile number"})
+			// Clean and validate mobile number
+			mobile, err := cleanPhoneNumber(rawMobile)
+			if err != nil {
+				tmpl.Execute(w, PageData{Error: fmt.Sprintf("Invalid mobile number: %v", err)})
 				return
 			}
 
 			// Log request
 			logger.WithFields(logrus.Fields{
-				"mobile": mobile,
-				"ip":     r.RemoteAddr,
-				"method": r.Method,
+				"raw_mobile":   rawMobile,
+				"clean_mobile": mobile,
+				"ip":           r.RemoteAddr,
+				"method":       r.Method,
 			}).Info("Lookup request received")
 
 			// First, check if we have the record in our database
