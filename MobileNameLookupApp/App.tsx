@@ -21,6 +21,7 @@ export default function App() {
       const response = await axios.post(API_URL, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
+      console.log(response.data);
       if (response.data && response.data.result && response.data.result.mobile_linked_name) {
         setResult(response.data.result.mobile_linked_name);
       } else if (response.data && response.data.message) {

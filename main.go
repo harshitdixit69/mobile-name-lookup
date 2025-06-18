@@ -430,14 +430,26 @@ func main() {
 
 			rawMobile := r.FormValue("mobile")
 			if rawMobile == "" {
-				tmpl.Execute(w, PageData{Error: "Mobile number is required"})
+				if isAPIRequest(r) {
+					respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{
+						"error": "Mobile number is required",
+					})
+				} else {
+					tmpl.Execute(w, PageData{Error: "Mobile number is required"})
+				}
 				return
 			}
 
 			// Clean and validate mobile number
 			mobile, err := cleanPhoneNumber(rawMobile)
 			if err != nil {
-				tmpl.Execute(w, PageData{Error: fmt.Sprintf("Invalid mobile number: %v", err)})
+				if isAPIRequest(r) {
+					respondWithJSON(w, http.StatusBadRequest, map[string]interface{}{
+						"error": fmt.Sprintf("Invalid mobile number: %v", err),
+					})
+				} else {
+					tmpl.Execute(w, PageData{Error: fmt.Sprintf("Invalid mobile number: %v", err)})
+				}
 				return
 			}
 
@@ -453,7 +465,13 @@ func main() {
 			record, err := database.GetMobileRecord(mobile)
 			if err != nil {
 				logger.WithError(err).Error("Failed to query database")
-				tmpl.Execute(w, PageData{Error: "Database error occurred"})
+				if isAPIRequest(r) {
+					respondWithJSON(w, http.StatusInternalServerError, map[string]interface{}{
+						"error": "Database error occurred",
+					})
+				} else {
+					tmpl.Execute(w, PageData{Error: "Database error occurred"})
+				}
 				return
 			}
 
@@ -463,7 +481,19 @@ func main() {
 					"mobile": mobile,
 					"name":   record.Name,
 				}).Info("Found record in database")
-				tmpl.Execute(w, PageData{Record: record})
+
+				if isAPIRequest(r) {
+					respondWithJSON(w, http.StatusOK, map[string]interface{}{
+						"status": "success",
+						"result": map[string]interface{}{
+							"mobile_linked_name": record.Name,
+							"mobile":             record.Mobile,
+						},
+						"source": "database",
+					})
+				} else {
+					tmpl.Execute(w, PageData{Record: record})
+				}
 				return
 			}
 
@@ -477,7 +507,14 @@ func main() {
 					"mobile":     mobile,
 					"client_ref": clientRefNum,
 				}).Error("Lookup failed")
-				tmpl.Execute(w, PageData{Error: "Service temporarily unavailable. Please try again."})
+
+				if isAPIRequest(r) {
+					respondWithJSON(w, http.StatusInternalServerError, map[string]interface{}{
+						"error": "Service temporarily unavailable. Please try again.",
+					})
+				} else {
+					tmpl.Execute(w, PageData{Error: "Service temporarily unavailable. Please try again."})
+				}
 				return
 			}
 
@@ -494,7 +531,19 @@ func main() {
 				"client_ref": clientRefNum,
 			}).Info("Lookup successful")
 
-			tmpl.Execute(w, PageData{Result: response})
+			if isAPIRequest(r) {
+				respondWithJSON(w, http.StatusOK, map[string]interface{}{
+					"status":  response.Status,
+					"message": response.Message,
+					"result": map[string]interface{}{
+						"mobile_linked_name": response.Result.MobileLinkedName,
+						"mobile":             mobile,
+					},
+					"source": "api",
+				})
+			} else {
+				tmpl.Execute(w, PageData{Result: response})
+			}
 			return
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -525,4 +574,27 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// isAPIRequest checks if the request is from an API client
+func isAPIRequest(r *http.Request) bool {
+	// Check if Accept header contains application/json
+	if strings.Contains(r.Header.Get("Accept"), "application/json") {
+		return true
+	}
+	// Check if User-Agent indicates it's a mobile app or API client
+	userAgent := r.Header.Get("User-Agent")
+	if strings.Contains(userAgent, "MobileNameLookupApp") ||
+		strings.Contains(userAgent, "curl") ||
+		strings.Contains(userAgent, "Postman") {
+		return true
+	}
+	return false
+}
+
+// respondWithJSON sends a JSON response
+func respondWithJSON(w http.ResponseWriter, statusCode int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(data)
 }
