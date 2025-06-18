@@ -17,6 +17,7 @@ import (
 	"mobile-name-lookup/db"
 
 	"github.com/joho/godotenv"
+	"github.com/rs/cors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
 )
@@ -396,8 +397,10 @@ func main() {
 	// Parse template
 	tmpl := template.Must(template.New("mobile").Parse(htmlTemplate))
 
+	mux := http.NewServeMux()
+
 	// Handle root path - GET request to show the form
-	http.HandleFunc("/", rateLimitMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", rateLimitMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
@@ -411,7 +414,7 @@ func main() {
 	}, limiter))
 
 	// Handle form submission - POST request
-	http.HandleFunc("/lookup", rateLimitMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/lookup", rateLimitMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			// Redirect GET requests to home page
@@ -505,9 +508,16 @@ func main() {
 		port = "8080"
 	}
 
-	// Start server
+	// Enable CORS for all origins (for development and mobile app use)
+	c := cors.New(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+		AllowCredentials: true,
+	})
+
 	logger.WithField("port", port).Info("Server starting")
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, c.Handler(mux)))
 }
 
 func getEnvOrDefault(key, defaultValue string) string {
